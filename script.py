@@ -16,7 +16,7 @@ class GameCanvas:
 		self.height = height
 		self.level = level
 
-		self.update_ms = 25
+		self.update_ms = 20
 
 		self.canvas = tk.Canvas(self.master, width=width, height=height, highlightthickness=0, bg='black')
 		self.canvas.pack()
@@ -33,13 +33,13 @@ class GameCanvas:
 		"""handles keyboard commands/ controls"""
 		key = event.keysym
 
-		if key == 'w':  # up
+		if key == 'w' or key == 'Up':  # up
 			self.pacman.next_direction = 0
-		elif key == 'a':  # left
+		elif key == 'a' or key == 'Left':  # left
 			self.pacman.next_direction = 3
-		elif key == 's':  # down
+		elif key == 's' or key == 'Down':  # down
 			self.pacman.next_direction = 2
-		elif key == 'd':  # right
+		elif key == 'd' or key == 'Right':  # right
 			self.pacman.next_direction = 1
 
 		if key == 'q':  # quit
@@ -93,9 +93,21 @@ class PacMan:
 
 		self.dir_vals = {None: (0, 0), 0: (0, -1), 1: (1, 0), 2: (0, 1), 3: (-1, 0)}
 
-		self.images = {'closed': tk.PhotoImage(file='pacman/pacman_closed.png'), 'open': tk.PhotoImage(file='pacman/pacman_open.png')}
+		self.images = {'0': tk.PhotoImage(file='pacman/0.png'),
+		               '1r': tk.PhotoImage(file='pacman/1r.png'),
+		               '1d': tk.PhotoImage(file='pacman/1d.png'),
+		               '1l': tk.PhotoImage(file='pacman/1l.png'),
+		               '1u': tk.PhotoImage(file='pacman/1u.png'),
+		               '2r': tk.PhotoImage(file='pacman/2r.png'),
+		               '2d': tk.PhotoImage(file='pacman/2d.png'),
+		               '2l': tk.PhotoImage(file='pacman/2l.png'),
+		               '2u': tk.PhotoImage(file='pacman/2u.png')}
 
-		self.pacman = self.canvas.create_image(self.xcoord, self.ycoord, image=self.images['closed'], anchor='nw')
+		self.pacman = self.canvas.create_image(self.xcoord, self.ycoord, image=self.images['0'], anchor='nw')
+
+		self.moving = False
+		self.counter = 0
+		self.animation_frame = 0
 
 	def next_overlaps_box(self, direction):
 		"""the area where pacman would move in next refresh"""
@@ -106,14 +118,47 @@ class PacMan:
 		d = self.ycoord+y+self.size
 		return (a, b, c, d)
 
+	def update_image(self):
+		if self.moving:
+			if self.animation_frame == 3:
+					self.animation_frame = 0
+			else:
+				self.animation_frame += 1
+		else:
+			self.animation_frame = 0
+
+		i = ''
+
+		if self.animation_frame == 0:
+			i = '0'
+		else:
+			k = {1: '1', 2: '2', 3: '1'}
+			i += k[self.animation_frame]
+			k = {0: 'u', 1: 'r', 2: 'd', 3: 'l'}
+			i += k[self.direction]
+
+		self.canvas.itemconfig(self.pacman, image=self.images[i])
+
 	def update(self):
 		"""moves pacman in direction by velocity"""
 		xvel = self.dir_vals[self.direction][0]*self.vel
 		yvel = self.dir_vals[self.direction][1]*self.vel
 
+		if xvel != 0 or yvel != 0:
+			self.moving = True
+		else:
+			self.moving = False
+
+		self.counter += 1
+
 		self.xcoord += xvel
 		self.ycoord += yvel
 		self.canvas.move(self.pacman, xvel, yvel)
+
+		if not self.moving:
+			self.update_image()
+		elif self.counter % 3 == 0:
+			self.update_image()
 
 
 class Level:
@@ -131,7 +176,7 @@ def main():
 
 	root = tk.Tk(className='Pacman')  # sets window name
 	root.resizable(False, False)
-	root.call('wm', 'iconphoto', root, tk.PhotoImage(file='pacman/pacman_open.png'))
+	root.call('wm', 'iconphoto', root, tk.PhotoImage(file='pacman/1r.png'))
 
 	canvas = GameCanvas(root)
 
