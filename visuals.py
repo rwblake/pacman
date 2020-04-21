@@ -4,6 +4,7 @@
 import os
 import sys
 import tkinter as tk
+import numpy as np
 import logic
 
 
@@ -12,15 +13,15 @@ class GameCanvas:
 	cv_width = 896
 	cv_height = 992
 	width = 28
-	weith = 31
+	height = 31
 	px_size = 32
-	update_ms = 15
+	update_ms = 10
 
 	def __init__(self, master, lname):
 		self.master = master
 		self.lname = lname
 
-		px, py = 1, 1
+		px, py = 14, 23
 		pd = (0, 0)
 
 		self.gc = logic.GameController(px, py, pd, self.lname)
@@ -31,7 +32,17 @@ class GameCanvas:
 		self.background = tk.PhotoImage(file='{}/background.png'.format(self.lname))
 		self.canvas.create_image(0, 0, image=self.background, anchor='nw')
 
+		self.coin_image = tk.PhotoImage(file='coins/coin.png')
+		self.coins = np.empty(shape=(28, 31))
+		for x in range(self.width):
+			for y in range(self.height):
+				if self.gc.level.coins[y, x]:
+					xv, yv = x*self.px_size, y*self.px_size
+					self.coins[x, y] = self.canvas.create_image(xv, yv, image=self.coin_image, anchor='nw')
+
 		self.pacman = Pacman(self.canvas, self.px_size, self.gc.pacman)
+
+		self.score_text = self.canvas.create_text(self.cv_width, 0, fill='white', text=str(self.gc.score), anchor='ne')
 
 		self.running = False
 		self.a_cycle = 0
@@ -59,6 +70,13 @@ class GameCanvas:
 		if self.a_cycle % 32 == 0:
 			self.gc.move_pacman()
 		self.pacman.move(self.gc.pacman)
+
+		#coins
+		on_coin = self.gc.check_coin()
+		if on_coin:
+			x, y = self.gc.pacman.x, self.gc.pacman.y
+			self.canvas.delete(int(self.coins[x, y]))
+			self.canvas.itemconfig(self.score_text, text=str(self.gc.score))
 		'''# pacman movement
 		if self.pacman.between_square == 0:
 			valid = logic.check_movement(self.pacman.data.x, self.pacman.data.y, self.pacman.next_direction, self.level.data.walls)
@@ -105,7 +123,7 @@ def main():
 	root = tk.Tk(className='Pacman')  # sets window name
 	root.resizable(False, False)
 
-	game_canvas = GameCanvas(root, 'level0')
+	game_canvas = GameCanvas(root, 'level1')
 
 	root.after(0, game_canvas.start)
 	root.mainloop()

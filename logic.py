@@ -2,6 +2,7 @@ import numpy as np
 
 
 class GameController:
+	coin_value = 1
 
 	def __init__(self, px, py, pd, lname):
 		self.pacman = Pacman(px, py, pd)
@@ -36,6 +37,17 @@ class GameController:
 			self.pacman.move()
 		else:
 			self.pacman.direction = (0, 0)
+
+	def check_coin(self):
+		x = self.pacman.x
+		y = self.pacman.y
+		coin_bool = self.level.coins[y, x]
+
+		if coin_bool:
+			self.level.coins[y, x] = False
+			self.score += self.coin_value
+
+		return coin_bool
 
 
 class Pacman:
