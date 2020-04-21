@@ -121,7 +121,7 @@ class PacMan:
 	def update_image(self):
 		if self.moving:
 			if self.animation_frame == 3:
-					self.animation_frame = 0
+					self.animation_frame = 1
 			else:
 				self.animation_frame += 1
 		else:
