@@ -33,7 +33,7 @@ class Ghost:
 		elif self.state == 'eaten':
 			self.target = self.eaten()
 
-	def move(self, walls):
+	def move(self, walls, portals):
 		if np.all(self.new_direction):
 			self.direction = self.new_direction
 			self.new_direction = np.empty([2,1], dtype=int)
@@ -48,8 +48,11 @@ class Ghost:
 
 			# check for wall
 			tmp = tuple(direction + self.pos)
-			if walls[tmp]:
-				continue
+			try:
+				if walls[tmp]:
+					continue
+			except:
+				pass
 
 			new_pos = self.pos + direction
 			delta = self.target - new_pos
@@ -65,9 +68,15 @@ class Ghost:
 		self.direction = new
 		self.pos += new
 
-	def update(self, pac_pos, pac_dir, bli_pos, walls):
+		# portal teleporting
+		p = tuple(self.pos)
+		if p in portals:
+			new_pos = portals[p]
+			self.pos = np.array(new_pos)
+
+	def update(self, pac_pos, pac_dir, bli_pos, walls, portals):
 		self.update_target(pac_pos, pac_dir, bli_pos)
-		self.move(walls)
+		self.move(walls, portals)
 
 	def new_state(self, new_state):
 		if new_state == 'frightened' or new_state == 'chase':
