@@ -5,19 +5,18 @@ import os
 import sys
 import tkinter as tk
 import numpy as np
-import threading
 import logic
-import a_star
 
 
 class GameCanvas:
 	"""contols visuals"""
+	
 	cv_width = 896
 	cv_height = 992
 	width = 28
 	height = 31
 	px_size = 32
-	update_ms = 6
+	update_ms = 4  # 4 is best
 
 	def __init__(self, master, lname):
 		self.master = master
@@ -52,23 +51,29 @@ class GameCanvas:
 					self.coins[x, y] = self.canvas.create_image(xv, yv, image=self.big_coin_image, anchor='nw')
 
 		# create and draw pacman
-		self.pacman = Pacman(self.canvas, self.gc.pacman)
+		p = self.gc.pacman
+		self.pacman = Pacman(self.canvas, p.pos*self.px_size, p.direction)
 
 		# create and draw ghosts
-		self.ghosts = [Ghost('blinky', self.canvas, 32, self.gc.ghosts[0], 1), Ghost('inky', self.canvas, 32, self.gc.ghosts[1], 1), Ghost('pinky', self.canvas, 32, self.gc.ghosts[2], 1), Ghost('clive', self.canvas, 32, self.gc.ghosts[3], 1)]
+		self.ghosts = []
+		for g, name in zip(self.gc.ghosts, ['blinky', 'inky', 'pinky', 'clive']):
+			self.ghosts.append(Ghost(self.canvas, g.pos*self.px_size, g.direction, g.state, name))
 
 		# draw score
 		self.score_text = self.canvas.create_text(self.cv_width, 0, fill='white', text=str(self.gc.score), anchor='ne')
 
+		self.pop_up_img = tk.PhotoImage('/images/200.png')
+
 		self.running = False
 		self.a_cycle = 0
 		self.codew = 0
+		self.paused = False
 
 	def keypress(self, event):
 		"""handles keyboard commands/ controls"""
+
 		f_str = 'felicity'
 		key = event.keysym
-		print(key)
 		if key == f_str[self.codew]:
 			self.codew += 1
 			if f_str[:self.codew] == f_str:
@@ -82,186 +87,231 @@ class GameCanvas:
 
 	def start(self):
 		"""preps for main game loop"""
+
 		self.running = True
+		self.paused = False
 		self.master.bind('<Key>', self.keypress)
 		self.gameloop()
 
 	def stop(self):
 		"""closes main game loop"""
+
 		self.master.unbind('<Key>')
 		self.running = False
-
-	def update_line(self, path):
-		if len(path) < 2:
-			return
-		p_pos = (self.gc.pacman.x, self.gc.pacman.y)
-		new_path = []
-		for i in path:
-			i = list(i)
-			i[0] = (i[0]*self.px_size)+16
-			i[1] = (i[1]*self.px_size)+16
-			new_path.append(tuple(i))
-		self.canvas.coords(self.line, list(sum(new_path, ())))
 
 	def gameloop(self):
 		"""main loop for game functions"""
 
 		# logic update (runs on scaled down grid)
-		if self.a_cycle % (32/self.pacman.speed) == 0:
+		if self.a_cycle % self.px_size == 0:
 			self.gc.gameloop()
 
+			self.pacman.next_pos = self.gc.pacman.pos * self.px_size
+			self.pacman.logic_direction = self.gc.pacman.direction
+			self.pacman.animate()
+
 			for ghost, gc_ghost in zip(self.ghosts, self.gc.ghosts):
-				ghost.animate(gc_ghost)
-				ghost.teleport(gc_ghost)
-
-			self.pacman.teleport(self.gc.pacman)
-
-
-		self.pacman.move(self.gc.pacman)
+				ghost.state = gc_ghost.state
+				ghost.speed = gc_ghost.speed
+				ghost.logic_direction = gc_ghost.direction
+				ghost.next_pos = gc_ghost.pos * self.px_size
+				ghost.animate()
 		
-		for ghost, gc_ghost in zip(self.ghosts, self.gc.ghosts):
-				ghost.move(gc_ghost)
+		# move entitites
+		self.pacman.move()
+		for ghost in self.ghosts:
+			ghost.move()
 
 		# coins
 		if self.gc.on_coin:
 			self.canvas.delete(int(self.coins[tuple(self.gc.pacman.pos)]))
-			self.canvas.itemconfig(self.score_text, text=str(self.gc.score))
 
+		# update score text
+		self.canvas.itemconfig(self.score_text, text=str(self.gc.score))
+
+		# increment game clock
 		self.a_cycle += 1
 
-		if not self.running:
+		if self.paused:
+			pass
+		elif not self.running:
 			self.stop()
 		else:
 			self.master.after(self.update_ms, self.gameloop)
 
 
-class MovingObject:
+class Entity:
+	"""class for pictures on screen"""
 
-	def __init__(self, canvas, px_size, data, img_loc, speed):
+	def __init__(self, canvas, pos, image, offset=np.array([0, 0])):
+		"""initiates variables"""
+
 		self.canvas = canvas
-		self.px_size = px_size
+		self.offset = offset
+
+		self.char = self.canvas.create_image(pos[0]+self.offset[0], pos[1]+self.offset[1], image=image, anchor='nw')
+
+		self.pos = pos
+		self.image = image
+
+	@property
+	def pos(self):
+		return np.array(self.canvas.coords(self.char)) - self.offset
+
+	@pos.setter
+	def pos(self, pos):
+		pos = pos + self.offset
+		self.canvas.coords(self.char, pos[0], pos[1])
+
+	@property
+	def image(self):
+		return self.__image
+
+	@image.setter
+	def image(self, image):
+		self.canvas.itemconfig(self.char, image=image)
+		self.__image = image
+
+
+class MovingEntity(Entity):
+	"""class for moving pictures on screen"""
+
+	def __init__(self, canvas, pos, image, l_d,speed=1, offset=np.array([0, 0]), next_pos=None):
+		"""initiates variables"""
+
+		super().__init__(canvas, pos, image, offset)
 		self.speed = speed
+		self.direction = l_d
+		self.next_pos = next_pos
+		self.logic_direction = l_d
 
-		self.image = tk.PhotoImage(file=img_loc)
+	def move(self):
+		"""move object slowly towards target position"""
 
-		self.char = self.canvas.create_image(data.pos[0]*self.px_size, data.pos[1]*self.px_size, image=self.image, anchor='nw')
+		target_v = self.next_pos - self.pos
+		for c, v in enumerate(target_v):
+			if abs(v) > 32:
+				self.teleport()
+				return
+			if v == 0:
+				target_v[c] = 0
+			elif v < 0:
+				target_v[c] = -1
+			else:
+				target_v[c] = 1
+		self.direction = target_v
+		self.canvas.move(self.char, self.direction[0]*self.speed, self.direction[1]*self.speed)
 
-	def teleport(self, data):
-		vis_pos = np.array(self.canvas.coords(self.char))
-		nvp = vis_pos + data.direction * np.array(self.px_size)
-		nlp = data.pos * np.array(self.px_size)
+	def teleport(self):
+		"""move object to new position far away"""
 
-		if not np.all(nvp == nlp):
-			new = nlp + (np.array(data.direction) * -1 * np.array(self.px_size))
-			self.canvas.coords(self.char, new[0], new[1])
-
-	def move(self, data):
-		d = data.direction
-		self.canvas.move(self.char, d[0]*self.speed, d[1]*self.speed)
+		self.pos = self.next_pos - self.logic_direction * np.array([32])
 
 
-class Ghost:
-	img_suff = ['nr1', 'nr2', 'nl1', 'nl2', 'nu1', 'nu2', 'nd1', 'nd2']
+class Ghost(MovingEntity):
+	"""ghost entity class from movingentity"""
 
-	def __init__(self, name, canvas, px_size, data, speed, anim_fr='nr1'):
-		self.canvas = canvas
-		self.px_size = px_size
-		self.speed = speed
+	offset = np.array([-16, -16])
+
+	def __init__(self, canvas, pos, l_d, state, name, speed=1, anim_fr='nr1'):
+		"""initiate variables and images"""
+
+		self.state = state
+		self.name = name
 		self.anim_fr = anim_fr
 
 		self.images = {}
-		for suff in self.img_suff:
+		for suff in ['nr1', 'nr2', 'nl1', 'nl2', 'nu1', 'nu2', 'nd1', 'nd2']:
 			self.images[suff] = tk.PhotoImage(file='images/{}-{}.png'.format(name, suff))
-		for suff in ['fb1', 'fb2', 'fw1', 'fw2']:
+		for suff in ['fb1', 'fb2', 'fw1', 'fw2', 'er', 'el', 'eu', 'ed']:
 			self.images[suff] = tk.PhotoImage(file='images/ghost-{}.png'.format(suff))
 
-		self.char = self.canvas.create_image(data.pos[0]*self.px_size-self.px_size/2, data.pos[1]*self.px_size-self.px_size/2, image=self.images[self.anim_fr], anchor='nw')
+		super().__init__(canvas, pos, self.images[anim_fr], l_d, speed=speed, offset=self.offset)
 
-	def animate(self, data):
+	def animate(self):
+		"""change image"""
+
 		img_name = ''
-		d = data.direction
-		dirs = {(0, 0): 'r', (1, 0): 'r', (-1, 0): 'l', (0, 1): 'd', (0, -1): 'u'}
-		state = data.state
 
-		if state == 'chase' or state == 'scatter':
+		if self.state == 'chase' or self.state == 'scatter':
+			dirs = {(0, 0): 'r', (1, 0): 'r', (-1, 0): 'l', (0, 1): 'd', (0, -1): 'u'}
 			img_name += 'n'
-			img_name += dirs[tuple(d)]
-			if self.anim_fr[2] == '1':
+			img_name += dirs[tuple(self.logic_direction)]
+			if len(self.anim_fr) > 2 and self.anim_fr[2] == '1':
 				img_name += '2'
 			else:
 				img_name += '1'
-			self.anim_fr = img_name
 
-		elif state == 'frightened':
-			img_name += 'f'
-			if self.anim_fr == 'fb1':
-				self.anim_fr = 'fb2'
-			elif self.anim_fr == 'fb2':
-				self.anim_fr = 'fw1'
-			elif self.anim_fr == 'fw1':
-				self.anim_fr = 'fw2'
+		elif self.state == 'frightened':
+			suffs = {'fb1': 'fb2', 'fb2': 'fw1', 'fw1': 'fw2'}
+			if self.anim_fr in suffs:
+				img_name = suffs[self.anim_fr]
 			else:
-				self.anim_fr = 'fb1'
+				img_name = 'fb1'
 
-		self.canvas.itemconfig(self.char, image=self.images[self.anim_fr])
+		elif self.state == 'eaten':
+			dirs = {(0, 0): 'r', (1, 0): 'r', (-1, 0): 'l', (0, 1): 'd', (0, -1): 'u'}
+			img_name += 'e'
+			img_name += dirs[tuple(self.logic_direction)]
 
-	def teleport(self, data):
-		vis_pos = np.array(self.canvas.coords(self.char))
-		nvp = vis_pos + data.direction * np.array(self.px_size)
-		nlp = data.pos * np.array(self.px_size) - 16
-
-		if not np.all(nvp == nlp):
-			new = nlp + (np.array(data.direction) * -1 * np.array(self.px_size))
-			self.canvas.coords(self.char, new[0], new[1])
-
-	def move(self, data):
-		d = data.direction
-		self.canvas.move(self.char, d[0]*self.speed, d[1]*self.speed)
+		self.anim_fr = img_name
+		self.image = self.images[self.anim_fr]
 
 
-class Pacman(MovingObject):
-	img_loc = 'images/pacman.png'
+class Pacman(MovingEntity):
+	"""pacman entity class from movingentity"""
 
-	def __init__(self, canvas, data, px_size=32, speed=1):
-		self.canvas = canvas
-		self.px_size = px_size
-		self.speed = speed
+	offset = np.array([-16, -16])
 
-		self.image = tk.PhotoImage(file=self.img_loc)
+	def __init__(self, canvas, pos, l_d, speed=1, anim_fr='00'):
+		"""initiate variables and images"""
 
-		self.char = self.canvas.create_image(data.pos[0]*self.px_size-self.px_size/2, data.pos[1]*self.px_size-self.px_size/2, image=self.image, anchor='nw')
+		self.anim_fr = anim_fr
+		self.images = {}
+		for suff in ['r1', 'r2', 'l1', 'l2', 'u1', 'u2', 'd1', 'd2']:
+			self.images[suff] = tk.PhotoImage(file='images/pacman-{}.png'.format(suff))
+			self.images['00'] = tk.PhotoImage(file='images/pacman.png')
+		image = self.images[self.anim_fr]
+		super().__init__(canvas, pos, image, l_d, speed=speed, offset=self.offset)
 
-	def teleport(self, data):
-		vis_pos = np.array(self.canvas.coords(self.char))
-		nvp = vis_pos + data.direction * np.array(self.px_size)
-		nlp = data.pos * np.array(self.px_size) - 16
+	def animate(self):
+		"""update image"""
 
-		if not np.all(nvp == nlp):
-			new = nlp + (np.array(data.direction) * -1 * np.array(self.px_size))
-			self.canvas.coords(self.char, new[0], new[1])
-
-	def move(self, data):
-		d = data.direction
-		self.canvas.move(self.char, d[0]*self.speed, d[1]*self.speed)
+		if np.all(self.logic_direction == np.array([0, 0])):
+			return
+		img_name = ''
+		dirs = {(0, 0): 'r', (1, 0): 'r', (-1, 0): 'l', (0, 1): 'd', (0, -1): 'u'}
+		img_name += dirs[tuple(self.logic_direction)]
+		if self.anim_fr[1] == '1':
+			img_name += '2'
+		else:
+			img_name += '1'
+		self.anim_fr = img_name
+		self.image = self.images[self.anim_fr]
 
 
 def onClose():
+	"""kills mainloop on window close"""
+
 	root.destroy()
 
 
 def main():
+	"""creates pacman game instance"""
+
 	xc_dir, _ = os.path.split(sys.argv[0])  # get file path
 	if xc_dir:
 		os.chdir(xc_dir)  # set current directory
 
 	global root
 	root = tk.Tk(className='Pacman')  # sets window name
-	root.resizable(False, False)
+	root.resizable(False, False)  # unresizable
 
-	root.protocol("WM_DELETE_WINDOW", onClose)
+	root.protocol("WM_DELETE_WINDOW", onClose)  # close mainloop at end
 
-	game_canvas = GameCanvas(root, 'level1')
+	game_canvas = GameCanvas(root, 'level1')  # create gamecanvas
 
+	# start
 	root.after(0, game_canvas.start)
 	root.mainloop()
 

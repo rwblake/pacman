@@ -4,23 +4,18 @@ import random
 
 class Ghost:
 
-	def __init__(self, pos, scatter_goal, target=np.empty([2,1], dtype=int), state='scatter', eaten_goal=np.array([13, 11])):
+	def __init__(self, pos, scatter_goal, target=np.empty([2,1], dtype=int), state='scatter', eaten_goal=np.array([13, 11]), speed=1):
 		self.pos = pos  # position vector
 		self.scatter_goal = scatter_goal  # goal in scatter mode
 		self.target = target  # goal to move towards
 		self.state = state  # chase, scatter, frightened, eaten
 		self.direction = np.array([0, 0])  # direction vector
-		self.new_direction = np.empty([2,1], dtype=int)
+		self.new_direction = np.zeros([2,1], dtype=int)
 		self.eaten_goal = eaten_goal
+		self.speed = speed
 
 	def flip_dir(self):
 		self.new_direction = self.direction * -1
-
-	def scatter(self):
-		return self.scatter_goal
-
-	def eaten(self):
-		return self.eaten_goal
 
 	def chase(self, pac_pos, pac_dir, bli_pos):
 		return pac_pos
@@ -29,14 +24,14 @@ class Ghost:
 		if self.state == 'chase':
 			self.target = self.chase(pac_pos, pac_dir, bli_pos)
 		elif self.state == 'scatter':
-			self.target = self.scatter()
+			self.target = self.scatter_goal
 		elif self.state == 'eaten':
-			self.target = self.eaten()
+			self.target = self.eaten_goal
 
 	def move(self, walls, portals):
-		if np.all(self.new_direction):
+		if np.any(self.new_direction):
 			self.direction = self.new_direction
-			self.new_direction = np.empty([2,1], dtype=int)
+			self.new_direction = np.zeros([2,1], dtype=int)
 		cost = []
 
 		for direction in [[0, -1], [-1, 0], [0, 1], [1, 0]]:
@@ -67,6 +62,9 @@ class Ghost:
 
 		self.direction = new
 		self.pos += new
+
+		if self.state == 'eaten' and np.array_equal(self.pos, self.target):
+			self.state = 'scatter'
 
 		# portal teleporting
 		p = tuple(self.pos)

@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import ghosts
 
 
@@ -19,12 +20,24 @@ class GameController:
 		self.on_coin = False  # either false or 1 or 2: small/ big coin
 		self.state_swap = False  # counts down
 
+		self.clock = 0
+
 	def gameloop(self):
 		self.state_swap -= 1
 		if self.state_swap == 0:
 			self.state_swap = False
 			for ghost in self.ghosts:
-				ghost.new_state('chase')
+				if ghost.state != 'eaten':
+					ghost.speed = 1
+					ghost.new_state('scatter')
+
+		a = random.randint(0, 90)
+		if not a:
+			for ghost in self.ghosts:
+				if ghost.state == 'scatter':
+					ghost.new_state('chase')
+				elif ghost.state == 'chase':
+					ghost.new_state('scatter')
 
 		self.move_pacman(self.level.portals)
 
@@ -34,9 +47,14 @@ class GameController:
 		bli_pos = self.ghosts[0].pos
 
 		for ghost in self.ghosts:
-			ghost.update(pac_pos, pac_dir, bli_pos, graph, self.level.portals)
+			if self.clock % (1/ghost.speed) == 0:
+				ghost.update(pac_pos, pac_dir, bli_pos, graph, self.level.portals)
+
+		self.collision()
 
 		self.check_coin()
+
+		self.clock += 1
 
 	def check_movement(self, x, y, direction):
 		"""find if wall is in way of path or not"""
@@ -60,7 +78,6 @@ class GameController:
 			self.pacman.new_direction = (1, 0)
 		elif key == 'space':  # swap
 			self.chase = not self.chase
-			print(self.chase)
 			if self.chase:
 				for ghost in self.ghosts:
 					ghost.new_state('scatter')
@@ -93,14 +110,28 @@ class GameController:
 			self.score += self.coin_value
 			self.on_coin = 1
 		elif self.level.big_coins[y, x]:
-			self.level.coins[y, x] = False
+			self.level.big_coins[y, x] = False
 			self.score += self.big_coin_value
 			self.on_coin = 2
 			for ghost in self.ghosts:
 				ghost.new_state('frightened')
-			self.state_swap = 25
+				ghost.speed = 0.5
+			self.state_swap = 40
 		else:
 			self.on_coin = False
+
+	def collision(self):
+		prev_pp = self.pacman.pos - self.pacman.direction
+		for ghost in self.ghosts:
+			prev_gp = ghost.pos - ghost.direction
+			if np.array_equal(ghost.pos, self.pacman.pos) or np.array_equal(ghost.pos, prev_pp) or np.array_equal(prev_gp, self.pacman.pos):
+				if ghost.state == 'frightened':
+					ghost.state = 'eaten'
+					ghost.speed = 1
+					self.score += 200
+				elif ghost.state != 'eaten':
+					# kill pacman
+					pass
 
 
 class Pacman:
@@ -113,8 +144,8 @@ class Pacman:
 		self.new_direction = (0, 0)
 
 	def move(self):
-		self.pos[0] += self.direction[0]*self.speed
-		self.pos[1] += self.direction[1]*self.speed
+		self.pos[0] += self.direction[0]
+		self.pos[1] += self.direction[1]
 
 
 class Level:
